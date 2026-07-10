@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AKFIX — Калькулятор доставки</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+* { box-sizing: border-box; }
+body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; background: #f5f5f5; color: #333; }
+header { background: linear-gradient(135deg, #ED1C24, #b8151b); padding: 20px 30px; display: flex; align-items: center; gap: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+header img { height: 60px; background: white; padding: 6px 12px; border-radius: 8px; }
+header h1 { color: white; font-size: 24px; margin: 0; font-weight: 600; }
+header p { color: #ffe5e5; margin: 0; font-size: 14px; }
+.search-panel { max-width: 1200px; margin: 20px auto 0; padding: 0 20px; position: relative; }
+.search-box { background: white; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 20px; display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+.search-field { flex: 1; min-width: 250px; position: relative; }
+.search-field label { display: block; font-size: 13px; color: #888; margin-bottom: 6px; font-weight: 600; }
+.search-field input { width: 100%; padding: 12px 14px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 15px; outline: none; transition: border-color 0.2s; }
+.search-field input:focus { border-color: #ED1C24; }
+#searchBtn { background: #ED1C24; color: white; border: none; padding: 13px 28px; border-radius: 10px; font-size: 15px; font-weight: 700; cursor: pointer; transition: background 0.2s; white-space: nowrap; }
+#searchBtn:disabled { background: #ccc; cursor: not-allowed; }
+#searchBtn:hover:not(:disabled) { background: #c8151c; }
+#searchStatus { width: 100%; font-size: 13px; margin-top: 8px; min-height: 16px; }
+#searchStatus.error { color: #ED1C24; }
+#searchStatus.success { color: #2e7d32; }
+#searchStatus.loading { color: #888; }
+.suggestions { position: absolute; top: 100%; left: 0; right: 0; background: white; border: 1px solid #e0e0e0; border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); margin-top: 6px; max-height: 280px; overflow-y: auto; z-index: 1000; display: none; }
+.suggestions.active { display: block; }
+.suggestion-item { padding: 12px 16px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f0f0f0; transition: background 0.15s; line-height: 1.4; }
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-item:hover, .suggestion-item.selected { background: #fff5f5; color: #ED1C24; }
+.suggestion-main { font-weight: 600; }
+.suggestion-sub { font-size: 12px; color: #999; margin-top: 2px; }
+.suggestion-loading { padding: 14px 16px; font-size: 13px; color: #999; text-align: center; }
+.container { max-width: 1200px; margin: 20px auto 30px; padding: 0 20px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 25px; }
+@media (max-width: 900px) { .container { grid-template-columns: 1fr; } }
+.card { background: white; border-radius: 14px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); padding: 20px; }
+#map { width: 100%; height: 550px; border-radius: 10px; overflow: hidden; }
+.section-title { font-size: 18px; font-weight: 700; color: #ED1C24; margin-bottom: 15px; border-left: 4px solid #ED1C24; padding-left: 10px; }
+.weight-selector { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+.weight-btn { padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 10px; background: #fafafa; cursor: pointer; font-size: 14px; font-weight: 600; color: #555; transition: all 0.2s; text-align: left; }
+.weight-btn:hover { border-color: #ED1C24; background: #fff5f5; }
+.weight-btn.active { background: #ED1C24; border-color: #ED1C24; color: white; }
+#result { border-radius: 12px; padding: 20px; background: #fafafa; border: 2px dashed #ddd; min-height: 100px; transition: all 0.3s; }
+#result.filled { border-style: solid; }
+.zone-badge { display: inline-block; padding: 6px 14px; border-radius: 20px; color: white; font-weight: 700; font-size: 15px; margin-bottom: 12px; }
+.address-line { font-size: 14px; color: #666; margin-bottom: 10px; padding-bottom: 10px; border-bottom: 1px solid #e5e5e5; }
+.price-big { font-size: 32px; font-weight: 800; color: #ED1C24; margin: 10px 0; }
+.vehicle-info { display: flex; align-items: center; gap: 10px; background: #fff5f5; padding: 10px 14px; border-radius: 10px; margin: 12px 0; font-size: 14px; }
+.vehicle-info b { color: #ED1C24; }
+.price-note { font-size: 13px; color: #888; }
+table.tariff { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+table.tariff th { background: #f0f0f0; padding: 8px; text-align: left; color: #666; }
+table.tariff td { padding: 8px; border-bottom: 1px solid #eee; }
+table.tariff tr.highlight td { background: #fff0f0; font-weight: 700; color: #ED1C24; }
+.legend { display: flex; gap: 15px; margin-top: 15px; flex-wrap: wrap; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 13px; color: #555; }
+.legend-dot { width: 14px; height: 14px; border-radius: 4px; }
+footer { text-align: center; padding: 20px; color: #999; font-size: 12px; }
+</style>
+</head>
+<body>
+
+<header>
+    <img src="logo.png" alt="Akfix logo">
+    <div>
+        <h1>Калькулятор стоимости доставки</h1>
+        <p>Мастерское решение для расчёта доставки по зонам</p>
+    </div>
+</header>
+
+<div class="search-panel">
+    <div class="search-box">
+        <div class="search-field">
+            <label>Адрес доставки</label>
+            <input type="text" id="addressInput" placeholder="Начните вводить адрес..." autocomplete="off">
+            <div class="suggestions" id="suggestions"></div>
+        </div>
+        <div class="search-field" style="max-width: 220px;">
+            <label>Вес груза, т</label>
+            <input type="number" id="weightInput" placeholder="Например: 4.2" step="0.1" min="0">
+        </div>
+        <button id="searchBtn">Рассчитать</button>
+        <div id="searchStatus"></div>
+    </div>
+</div>
+
+<div class="container">
+    <div class="card">
+        <div class="section-title">Карта зон доставки</div>
+        <div id="map"></div>
+        <div class="legend">
+            <div class="legend-item"><span class="legend-dot" style="background:#ED1C24"></span>Красная зона</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#E8A600"></span>Оранжевая зона</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#0e4779"></span>Синяя зона</div>
+        </div>
+    </div>
+
+    <div>
+        <div class="card" style="margin-bottom: 20px;">
+            <div class="section-title">Или выберите вес вручную</div>
+            <div class="weight-selector" id="weightSelector">
+                <button class="weight-btn active" data-weight="3.5">До 3,5 т</button>
+                <button class="weight-btn" data-weight="5">От 3,5 до 5 т</button>
+                <button class="weight-btn" data-weight="10">От 5 до 10 т</button>
+                <button class="weight-btn" data-weight="10+">Свыше 10 т</button>
+            </div>
+        </div>
+        <div class="card">
+            <div class="section-title">Результат расчёта</div>
+            <div id="result">Начните вводить адрес — появятся подсказки, либо кликните на карту.</div>
+        </div>
+    </div>
+</div>
+
+<footer>© Akfix — Мастерское решение</footer>
+
+<script>
+var map, redPolygon, orangePolygon, bluePolygon, marker;
+var currentWeight = "3.5";
+var currentZoneKey = null;
+var currentAddress = "";
+var zoneCoords = {};
+var suggestTimer = null;
+var suggestItems = [];
+var suggestIndex = -1;
+
+var tariffs = {
+    red: { name: "Красная зона", color: "#ED1C24", prices: { "3.5": 2500, "5": 3000, "10": 4000, "10+": "По согласованию" } },
+    orange: { name: "Оранжевая зона", color: "#E8A600", prices: { "3.5": 4000, "5": 4750, "10": 6850, "10+": "По согласованию" } },
+    blue: { name: "Синяя зона", color: "#0e4779", prices: { "3.5": 4900, "5": 5600, "10": 10450, "10+": "По согласованию" } }
+};
+
+var weightLabels = { "3.5": "До 3,5 т", "5": "От 3,5 до 5 т", "10": "От 5 до 10 т", "10+": "Свыше 10 т" };
+var vehicleLabels = {
+    "3.5": "Газель / малотоннажник (до 3,5 т)",
+    "5": "Среднетоннажный грузовик (до 5 т)",
+    "10": "Грузовик (до 10 т)",
+    "10+": "Крупнотоннажный транспорт (по согласованию)"
+};
+
+function weightToCategory(weight){
+    if (weight <= 3.5) return "3.5";
+    if (weight <= 5) return "5";
+    if (weight <= 10) return "10";
+    return "10+";
+}
+
+function parseKmlCoords(str){
+    return str.trim().split(/\s+/).map(function(pair){
+        var parts = pair.split(',');
+        var lon = parseFloat(parts[0]);
+        var lat = parseFloat(parts[1]);
+        return [lat, lon];
+    });
+}
+
+
+   var redRaw = "37.65186209480898,55.95556994632095 37.65598196785588,55.94401159647181 37.659415195394935,55.928209580943985 37.66902823250432,55.91471493362735 37.671088169027755,55.89504285738908 37.671088169027755,55.88308042398311 37.6635350684418,55.86725345311071 37.66147513191837,55.857985878418425 37.671088169027755,55.84639828749877 37.67040152351994,55.84021682018313 37.64911551277774,55.82785092409953 37.64636893074649,55.81934707974842 37.67040152351994,55.819733658625786 37.6903142432465,55.81045470096751 37.70404715340275,55.79227697222865 37.69992728035588,55.783765319610126 37.70198721687932,55.77873482877939 37.692374179769935,55.770994338522 37.70318884651789,55.764413707904986 37.715376804281576,55.76073581079971 37.717780063558926,55.751442729382454 37.743185947347975,55.74776360365068 37.78283972542414,55.72781280422819 37.8024091223968,55.72180618942626 37.818545291830404,55.71696146930679 37.83811468880307,55.71211614563873 37.85528082649838,55.70009713823652 37.86661047737728,55.69156526762455 37.894076297689786,55.67934592411681 37.908152530599935,55.66828702325022 37.91879553597102,55.65703088383531 37.94420141976009,55.66207714146586 37.96480078499446,55.662853430806955 37.984713504721014,55.65838955592885 38.00187964241635,55.662853430806955 38.02797217171321,55.65955409431643 38.048228214193685,55.655478057738755 38.0599011878265,55.65664268311019 38.078440616537435,55.656836783956 38.09560675423274,55.653925169785204 38.10109991829523,55.655672164383596 38.120325992514005,55.651983972854886 38.12925238411555,55.64965440895203 38.13302893440853,55.65159572187015 38.13577551643977,55.65664268311019 38.13749213020932,55.66304750072617 38.14538855354916,55.667898934629825 38.15706152718195,55.670615473800694 38.18658728401787,55.66925722788408 38.19517035286552,55.66809297941697 38.20272345345145,55.67119756468997 38.21542639534599,55.67042144156338 38.23636908333428,55.669645302975795 38.241862247396774,55.67100353535778 38.24083227913504,55.683419464664375 38.250788638998316,55.69602534234897 38.25250525276786,55.704943958870984 38.23190588753349,55.71734906910769 38.22641272347098,55.7233563723831 38.19551367561939,55.738467417992844 38.18607229988692,55.73488391930364 38.15929312508223,55.74263160945008 38.13148398201583,55.75066820549094 38.13800711434005,55.75386301674879 38.14161200325606,55.7589935273515 38.14229864876387,55.76644608046687 38.147791812826384,55.768575118628945 38.15894980232829,55.766349303224295 38.163412998129076,55.76644608046055 38.16753287117594,55.768188029459814 38.17130942146892,55.774671263807456 38.18109411995525,55.78831154818636 38.18435568611736,55.791793405564206 38.183154056478685,55.79488812751406 38.17903418343181,55.798079300888844 38.183154056478685,55.79865948601579 38.1922521094572,55.801850349042645 38.19499869148845,55.809101333915265 38.195685336996256,55.812774648592324 38.19561559939813,55.82288956835157 38.212867567781835,55.825305402122865 38.21149427676621,55.83371132938387 38.20909101748886,55.83999042922065 38.21630079532089,55.843757400374365 38.22162229800644,55.85080741252744 38.21183759952011,55.855442337205254 38.20703108096543,55.859690530482126 38.20857603335799,55.86306944205313 38.20788938785019,55.870888077024894 38.197933027986906,55.876003118568256 38.15862257266463,55.88864305419177 38.12051374698104,55.89790328367127 38.10609419131698,55.90889692386154 38.0745084979576,55.911596637541166 38.062148878817,55.911789467009996 38.05116255069199,55.91545304395163 38.04429609561385,55.91660989076411 38.02953321719589,55.91333206809301 38.017173598055265,55.915645854161056 38.01786024356307,55.91911627327023 38.01751692080918,55.922971928603644 38.00000746035995,55.92277915498414 37.9914243915123,55.92605617557137 37.97631819034042,55.933765714681506 37.91589338565292,55.926634444431265 37.89048750186387,55.924514082891214 37.85958845401231,55.92644168910525 37.81461317325058,55.92528513693051 37.799163649324804,55.926634444431265 37.777019331697794,55.92827282581047 37.770496199373596,55.932994830061084 37.76191313052592,55.94368947806549 37.75195677066264,55.94234076694513 37.75178510928569,55.948794885769495 37.75024015689313,55.95264757610126 37.735133955721246,55.953899617571096 37.71916944766461,55.95601836435001 37.70989973330912,55.95929256214485 37.69376356387554,55.96141101251756 37.68706877017438,55.962855343738795 37.653423140291565,55.95736659712457 37.65186209480898,55.95556994632095";
+   var orangeRaw = "37.23645765567225,55.69560420207565 37.287956068758156,55.745696967974645 37.320228407625336,55.80070517351741 37.320228407625336,55.8200870122647 37.384420691343976,55.84161493279657 37.350765990199356,55.85888307308395 37.32483605101758,55.87739803426845 37.29753282082021,55.89108112409428 37.197183697277715,55.958641021376984 37.18950154439757,55.99424711601112 37.20487196231287,56.01693062454342 37.49944288516444,56.090320466380774 37.61937182889368,56.12172093680091 37.659766903785616,56.13846586731888 37.68265251822844,56.165932226431465 37.72063662115191,56.15756885988873 37.739956572604314,56.1562292306438 37.775506570724005,56.151643051959276 37.80384679101164,56.148179174724746 37.82051403766648,56.143948319507885 37.830245091645125,56.137921066307875 37.84306605040894,56.13361838080944 37.851370168864285,56.13178113043108 37.863107514858704,56.13128593547548 37.893448661925646,56.1287409512704 37.93134290957851,56.14134159901862 37.96012768186052,56.130468175571764 37.9676264434004,56.12074238662796 37.96614447429266,56.10396964796044 37.98560519317318,56.09217999877128 38.00781249408497,56.08422625598063 38.0272732129655,56.08395036672099 38.0448999957456,56.07747691962277 38.06801994258822,56.0736907501861 38.09320847019301,56.06622538716381 38.15310394651526,56.04679325959281 38.17005930205369,56.04271905260901 38.19697101745544,56.03979756632715 38.21852210939176,56.02914816532282 38.28403133755275,56.005665619814614 38.294692243874415,55.99553044206168 38.300546631641375,55.98520013316406 38.30811763317787,55.97862088949561 38.322211767038596,55.97396575353925 38.35515625033918,55.96631687206511 38.380547633053794,55.954814383143386 38.41873343192124,55.94716618552895 38.432333167292455,55.94295617306338 38.43906644758562,55.9377822172269 38.44613718409431,55.92413405937814 38.44433387875595,55.91784404269385 38.441200376454994,55.91336027139595 38.441764623411345,55.907862597246606 38.44622303382627,55.90352137931004 38.44827818496382,55.89570746213451 38.45692569936034,55.87939942394323 38.440510652721656,55.863277575026395 38.429847548250386,55.842308608590216 38.427595779956924,55.811206886473556 38.4335837577572,55.76653378444256 38.449624011305765,55.74882562364313 38.45605122774497,55.740407332840974 38.41946718406092,55.68634402801064 38.372148637191586,55.64874741844981 38.36346818210745,55.63071243724808 38.37126721921083,55.6091711953474 38.3841187113863,55.58705903106518 38.27809889102377,55.43216718981759 37.98129637027182,55.44319543760509 37.78199751162924,55.45578142451063 37.6122244098226,55.43773049807129 37.55780775332843,55.42670071656168 37.23645765567225,55.69560420207565";
+   var blueRaw = "36.9624860980539,56.18370955808226 36.927464899521794,56.16624600025128 36.92128281231776,56.15030758488024 36.917158384003486,56.110738226028516 36.89792319924987,56.06683100306284 36.90019215547502,56.0423122832812 36.89526462899941,55.9872863805584 36.872965325101916,55.95258131612368 36.84987623477266,55.90854132203055 36.87596876406954,55.73071582511556 36.871571504149266,55.71603177414052 36.88022050887743,55.700954418087896 36.882003058527474,55.69324084000763 36.895458581810345,55.67931859898203 36.933633343374446,55.667525956534874 36.97524133247763,55.658058944960736 36.989040178514394,55.6461627901874 37.01004880238324,55.62901890861954 37.011316367902445,55.615340882615904 37.00571747834351,55.60593407945573 36.99966954053428,55.576806603019975 36.989633601439266,55.518486492865115 37.036988345224565,55.49054870780295 37.089836253072356,55.466102048826215 37.16065513231443,55.43274669208036 37.2410870486659,55.40639607606557 37.25515548282616,55.395754407532706 37.29874967382233,55.296274970772565 37.32356527363342,55.247473882667784 37.4623640277414,55.135722435180035 37.70114501356028,55.17846075258738 37.92469103907821,55.2504328365416 38.07270605873676,55.247814185015486 38.536234689235194,55.28969527474844 38.68665296817105,55.32996625625811 38.812351714920055,55.42879339488372 38.87314115177114,55.48708249862016 38.87625236596598,55.55229208794254 38.88870922818496,55.64950572740608 38.9391484796302,55.68930772029395 38.969861269415276,55.74484360907146 38.970361656856696,55.79024288404602 38.997703383210165,55.871497288075325 38.827813994039474,55.93015803779121 38.77602763221251,55.9987355591752 38.706415349840185,56.069207597735485 38.58324471785846,56.136483328236274 38.13802320742887,56.33962908318691 37.50630934024141,56.34115454947168 36.9624860980539,56.18370955808226";
+
+function initMap(){
+    map = L.map('map').setView([55.75, 37.6], 8);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+    }).addTo(map);
+
+    var redCoords = parseKmlCoords(redRaw);
+    var orangeCoords = parseKmlCoords(orangeRaw);
+    var blueCoords = parseKmlCoords(blueRaw);
+
+    bluePolygon = L.polygon(blueCoords, { color: tariffs.blue.color, weight: 3, fillOpacity: 0.25 }).addTo(map);
+    orangePolygon = L.polygon(orangeCoords, { color: tariffs.orange.color, weight: 3, fillOpacity: 0.25 }).addTo(map);
+    redPolygon = L.polygon(redCoords, { color: tariffs.red.color, weight: 3, fillOpacity: 0.4 }).addTo(map);
+
+    zoneCoords = { red: redCoords, orange: orangeCoords, blue: blueCoords };
+
+    map.on('click', function (e) {
+        var lat = e.latlng.lat;
+        var lng = e.latlng.lng;
+
+        setMarker(lat, lng);
+        checkZoneByCoords(lat, lng);
+
+        reverseGeocode(lat, lng).then(function(address){
+            currentAddress = address;
+            document.getElementById('addressInput').value = address;
+            renderResult();
+        });
+    });
+}
+
+function isPointInPolygon(lat, lng, polygon) {
+    var inside = false;
+    for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        var xi = polygon[i][0], yi = polygon[i][1];
+        var xj = polygon[j][0], yj = polygon[j][1];
+        var intersect = ((yi > lng) !== (yj > lng)) &&
+            (lat < (xj - xi) * (lng - yi) / (yj - yi) + xi);
+        if (intersect) inside = !inside;
+    }
+    return inside;
+}
+
+function checkZoneByCoords(lat, lng) {
+    if (isPointInPolygon(lat, lng, zoneCoords.red)) {
+        currentZoneKey = 'red';
+    } else if (isPointInPolygon(lat, lng, zoneCoords.orange)) {
+        currentZoneKey = 'orange';
+    } else if (isPointInPolygon(lat, lng, zoneCoords.blue)) {
+        currentZoneKey = 'blue';
+    } else {
+        currentZoneKey = null;
+    }
+}
+
+function setMarker(lat, lng) {
+    if (marker) map.removeLayer(marker);
+    marker = L.marker([lat, lng]).addTo(map);
+}
+
+function reverseGeocode(lat, lng) {
+    var url = 'https://nominatim.openstreetmap.org/reverse?format=json&lat=' + lat + '&lon=' + lng;
+    return fetch(url, { headers: { 'Accept-Language': 'ru' } })
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+            return data && data.display_name ? data.display_name : (lat.toFixed(5) + ', ' + lng.toFixed(5));
+        })
+        .catch(function(){
+            return lat.toFixed(5) + ', ' + lng.toFixed(5);
+        });
+}
+
+var DGIS_KEY = "50b13788-9afd-401a-a1d1-19f30773dcaa";
+var MOSCOW_VIEWPOINT1 = "36.5,54.2";
+var MOSCOW_VIEWPOINT2 = "40.2,56.9";
+
+var addressInput = document.getElementById('addressInput');
+var suggestionsBox = document.getElementById('suggestions');
+
+addressInput.addEventListener('input', function(){
+    var query = this.value.trim();
+    clearTimeout(suggestTimer);
+
+    if (query.length < 3) {
+        suggestionsBox.classList.remove('active');
+        suggestionsBox.innerHTML = '';
+        return;
+    }
+
+    suggestionsBox.classList.add('active');
+    suggestionsBox.innerHTML = '<div class="suggestion-loading">Ищем адреса...</div>';
+
+    suggestTimer = setTimeout(function(){
+        fetchSuggestions(query);
+    }, 350);
+});
+
+function fetchSuggestions(query){
+    var url = "https://catalog.api.2gis.com/3.0/suggests" +
+        "?q=" + encodeURIComponent(query) +
+        "&key=" + DGIS_KEY +
+        "&viewpoint1=" + MOSCOW_VIEWPOINT1 +
+        "&viewpoint2=" + MOSCOW_VIEWPOINT2 +
+        "&fields=items.point,items.address_name,items.full_name" +
+        "&page_size=7";
+
+    fetch(url)
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+            var items = (data.result && data.result.items) ? data.result.items : [];
+            suggestItems = items.map(function(item){
+                return {
+                    title: item.name || item.full_name || "",
+                    subtitle: item.address_name || "",
+                    point: item.point || null,
+                    fullName: item.full_name || item.name || ""
+                };
+            });
+            suggestIndex = -1;
+            renderSuggestions();
+        })
+        .catch(function(err){
+            console.error('Ошибка Suggest API:', err);
+            suggestionsBox.innerHTML = '<div class="suggestion-loading">Ошибка загрузки подсказок</div>';
+        });
+}
+
+function renderSuggestions(){
+    if (!suggestItems.length) {
+        suggestionsBox.innerHTML = '<div class="suggestion-loading">Ничего не найдено</div>';
+        return;
+    }
+
+    suggestionsBox.innerHTML = suggestItems.map(function(item, i){
+        return '<div class="suggestion-item" data-index="' + i + '">' +
+                    '<div class="suggestion-main">' + item.title + '</div>' +
+                    (item.subtitle ? '<div class="suggestion-sub">' + item.subtitle + '</div>' : '') +
+                '</div>';
+    }).join('');
+
+    var items = suggestionsBox.querySelectorAll('.suggestion-item');
+    items.forEach(function(el){
+        el.addEventListener('click', function(){
+            var idx = parseInt(this.getAttribute('data-index'), 10);
+            selectSuggestion(idx);
+        });
+    });
+}
+
+function selectSuggestion(idx){
+    var item = suggestItems[idx];
+    if (!item) return;
+
+    suggestionsBox.classList.remove('active');
+    suggestionsBox.innerHTML = '';
+
+    addressInput.value = item.fullName;
+    currentAddress = item.fullName;
+
+    var statusDiv = document.getElementById('searchStatus');
+
+    if (item.point) {
+        var lat = item.point.lat;
+        var lng = item.point.lon;
+
+        setMarker(lat, lng);
+        map.setView([lat, lng], 13);
+        checkZoneByCoords(lat, lng);
+        renderResult();
+
+        statusDiv.className = 'success';
+        statusDiv.textContent = '✓ Адрес найден';
+    } else {
+        statusDiv.className = 'error';
+        statusDiv.textContent = 'Не удалось получить координаты для этого варианта';
+    }
+}
+
+addressInput.addEventListener('keydown', function(e){
+    var items = suggestionsBox.querySelectorAll('.suggestion-item');
+    if (!items.length) return;
+
+    if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        suggestIndex = Math.min(suggestIndex + 1, items.length - 1);
+        updateSelectedSuggestion(items);
+    } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        suggestIndex = Math.max(suggestIndex - 1, 0);
+        updateSelectedSuggestion(items);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (suggestIndex >= 0) {
+            selectSuggestion(suggestIndex);
+        } else {
+            searchByAddress();
+        }
+    } else if (e.key === 'Escape') {
+        suggestionsBox.classList.remove('active');
+    }
+});
+
+function updateSelectedSuggestion(items){
+    items.forEach(function(el, i){
+        el.classList.toggle('selected', i === suggestIndex);
+    });
+    if (suggestIndex >= 0) {
+        items[suggestIndex].scrollIntoView({ block: 'nearest' });
+    }
+}
+
+document.addEventListener('click', function(e){
+    if (!e.target.closest('.search-field')) {
+        suggestionsBox.classList.remove('active');
+    }
+});
+
+function forwardGeocode(address) {
+    var url = "https://catalog.api.2gis.com/3.0/items/geocode" +
+        "?q=" + encodeURIComponent(address) +
+        "&key=" + DGIS_KEY +
+        "&viewpoint1=" + MOSCOW_VIEWPOINT1 +
+        "&viewpoint2=" + MOSCOW_VIEWPOINT2 +
+        "&fields=items.point,items.full_name";
+
+    return fetch(url)
+        .then(function(res){ return res.json(); })
+        .then(function(data){
+            var items = (data.result && data.result.items) ? data.result.items : [];
+            if (!items.length || !items[0].point) return null;
+
+            return {
+                lat: items[0].point.lat,
+                lng: items[0].point.lon,
+                displayName: items[0].full_name
+            };
+        });
+}
+
+function searchByAddress(){
+    var statusDiv = document.getElementById('searchStatus');
+    var address = document.getElementById('addressInput').value.trim();
+    var weightVal = document.getElementById('weightInput').value.trim();
+
+    statusDiv.className = '';
+    statusDiv.textContent = '';
+    suggestionsBox.classList.remove('active');
+
+    if (!address) {
+        statusDiv.classList.add('error');
+        statusDiv.textContent = 'Введите адрес доставки';
+        return;
+    }
+
+    if (weightVal) {
+        var w = parseFloat(weightVal.replace(',', '.'));
+        if (!isNaN(w)) {
+            currentWeight = weightToCategory(w);
+            updateWeightButtons(currentWeight);
+        }
+    }
+
+    statusDiv.classList.add('loading');
+    statusDiv.textContent = 'Ищем адрес...';
+    document.getElementById('searchBtn').disabled = true;
+
+    forwardGeocode(address).then(function(result){
+        document.getElementById('searchBtn').disabled = false;
+        statusDiv.classList.remove('loading');
+
+        if (!result) {
+            statusDiv.classList.add('error');
+            statusDiv.textContent = 'Адрес не найден. Проверьте правильность ввода.';
+            return;
+        }
+
+        currentAddress = result.displayName;
+        setMarker(result.lat, result.lng);
+        map.setView([result.lat, result.lng], 11);
+        checkZoneByCoords(result.lat, result.lng);
+
+        statusDiv.classList.add('success');
+        statusDiv.textContent = '✓ Найдено: ' + currentAddress;
+
+        renderResult();
+    }).catch(function(err){
+        console.error('Ошибка Geocoder API:', err);
+        document.getElementById('searchBtn').disabled = false;
+        statusDiv.classList.remove('loading');
+        statusDiv.classList.add('error');
+        statusDiv.textContent = 'Ошибка поиска адреса. Попробуйте ещё раз.';
+    });
+}
+
+function updateWeightButtons(weightKey){
+    document.querySelectorAll('.weight-btn').forEach(function(btn){
+        btn.classList.toggle('active', btn.getAttribute('data-weight') === weightKey);
+    });
+}
+
+document.getElementById('searchBtn').addEventListener('click', searchByAddress);
+
+document.querySelectorAll('.weight-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+        currentWeight = this.getAttribute('data-weight');
+        updateWeightButtons(currentWeight);
+        document.getElementById('weightInput').value = '';
+        renderResult();
+    });
+});
+
+function renderResult(){
+    var resultDiv = document.getElementById('result');
+
+    if (!currentZoneKey) {
+        resultDiv.classList.remove('filled');
+        resultDiv.innerHTML = '<div style="color:#999;">Адрес находится вне зон доставки. Свяжитесь с менеджером для уточнения стоимости.</div>' +
+            (currentAddress ? '<div class="address-line" style="margin-top:10px;">📍 ' + currentAddress + '</div>' : '');
+        return;
+    }
+
+    var zone = tariffs[currentZoneKey];
+    var price = zone.prices[currentWeight];
+    var priceDisplay = typeof price === 'number' ? price.toLocaleString('ru-RU') + ' ₽' : price;
+
+    var html = '';
+    html += '<span class="zone-badge" style="background:' + zone.color + '">' + zone.name + '</span>';
+
+    if (currentAddress) {
+        html += '<div class="address-line">📍 ' + currentAddress + '</div>';
+    }
+
+    html += '<div class="vehicle-info">🚚 <b>' + vehicleLabels[currentWeight] + '</b></div>';
+    html += '<div class="price-big">' + priceDisplay + '</div>';
+    html += '<div class="price-note">Вес груза: ' + weightLabels[currentWeight] + '</div>';
+
+    html += '<table class="tariff"><tr><th>Категория веса</th><th>Стоимость</th></tr>';
+    ['3.5', '5', '10', '10+'].forEach(function(key){
+        var p = zone.prices[key];
+        var pDisplay = typeof p === 'number' ? p.toLocaleString('ru-RU') + ' ₽' : p;
+        var rowClass = key === currentWeight ? ' class="highlight"' : '';
+        html += '<tr' + rowClass + '><td>' + weightLabels[key] + '</td><td>' + pDisplay + '</td></tr>';
+    });
+    html += '</table>';
+
+    resultDiv.classList.add('filled');
+    resultDiv.innerHTML = html;
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    initMap();
+});
+</script>
+</body>
+</html>
